@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { getTechnicalAnalysis } from './services/geminiService';
 import { fetchStockData } from './services/stockDataService';
 import { NASDAQ_TOP_25 } from './constants';
-import { Stock, StockAnalysis, AnalysisRecommendation, StockInfo } from './types';
+import { Stock, AnalysisRecommendation } from './types';
 import Header from './components/Header';
 import StockCard from './components/StockCard';
 import StockChart from './components/StockChart';
@@ -19,66 +18,74 @@ const App: React.FC = () => {
   const analyzeAllStocks = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const analyzedStocks: Stock[] = [];
-    setAnalysisStatus({});
     setStocks([]);
     setSelectedStock(null);
+    setAnalysisStatus(
+      Object.fromEntries(NASDAQ_TOP_25.map(s => [s.ticker, 'Pending...']))
+    );
 
-    for (const stockInfo of NASDAQ_TOP_25) {
-      try {
-        setAnalysisStatus(prev => ({ ...prev, [stockInfo.ticker]: 'Fetching data...' }));
-        const chartData = await fetchStockData(stockInfo); // Pass the whole stockInfo object
-        
-        setAnalysisStatus(prev => ({ ...prev, [stockInfo.ticker]: 'Analyzing with AI...' }));
-        const analysis = await getTechnicalAnalysis(stockInfo.ticker, chartData);
+    const analysisPromises = NASDAQ_TOP_25.map(stockInfo =>
+      (async () => {
+        try {
+          setAnalysisStatus(prev => ({ ...prev, [stockInfo.ticker]: 'Fetching data...' }));
+          const chartData = await fetchStockData(stockInfo);
 
-        const latestData = chartData[chartData.length - 1];
-        
-        const newStock: Stock = {
-          ...stockInfo,
-          price: latestData.close,
-          change: (latestData.close - chartData[chartData.length - 2].close).toFixed(2),
-          changePercent: (((latestData.close - chartData[chartData.length - 2].close) / chartData[chartData.length - 2].close) * 100).toFixed(2),
-          analysis,
-          chartData,
-        };
-        analyzedStocks.push(newStock);
-        // Sort immediately to show recommendations as they come in
-        const sortedStocks = [...analyzedStocks].sort((a, b) => {
-            const order: Record<AnalysisRecommendation, number> = { [AnalysisRecommendation.BUY]: 1, [AnalysisRecommendation.HOLD]: 2, [AnalysisRecommendation.SELL]: 3 };
-            return order[a.analysis.recommendation] - order[b.analysis.recommendation];
-        });
-        setStocks(sortedStocks);
-        setAnalysisStatus(prev => ({ ...prev, [stockInfo.ticker]: 'Done' }));
+          setAnalysisStatus(prev => ({ ...prev, [stockInfo.ticker]: 'Analyzing...' }));
+          const analysis = await getTechnicalAnalysis(stockInfo.ticker, chartData);
 
-      } catch (e) {
-        console.error(`Failed to process ${stockInfo.ticker}:`, e);
-        setError(`Failed to analyze ${stockInfo.ticker}. See console for details.`);
-        setAnalysisStatus(prev => ({ ...prev, [stockInfo.ticker]: 'Error' }));
-      }
+          const latestData = chartData[chartData.length - 1];
+          const prevData = chartData[chartData.length - 2];
+          
+          const newStock: Stock = {
+            ...stockInfo,
+            price: latestData.close,
+            change: (latestData.close - prevData.close).toFixed(2),
+            changePercent: (((latestData.close - prevData.close) / prevData.close) * 100).toFixed(2),
+            analysis,
+            chartData,
+          };
+
+          setAnalysisStatus(prev => ({ ...prev, [stockInfo.ticker]: 'Done' }));
+          return newStock;
+        } catch (e) {
+          console.error(`Failed to process ${stockInfo.ticker}:`, e);
+          setAnalysisStatus(prev => ({ ...prev, [stockInfo.ticker]: 'Error' }));
+          return null; // Return null on error
+        }
+      })()
+    );
+
+    const results = await Promise.all(analysisPromises);
+    const successfulStocks = results.filter((stock): stock is Stock => stock !== null);
+
+    if (successfulStocks.length < NASDAQ_TOP_25.length) {
+        setError("Could not analyze all stocks. Some data may be missing.");
     }
-    
-    if (stocks.length > 0) {
-        // Reselect the first stock after the full analysis is complete
-        setSelectedStock(stocks[0]);
-    }
 
+    const sortedStocks = successfulStocks.sort((a, b) => {
+        const order: Record<AnalysisRecommendation, number> = { [AnalysisRecommendation.BUY]: 1, [AnalysisRecommendation.HOLD]: 2, [AnalysisRecommendation.SELL]: 3 };
+        return order[a.analysis.recommendation] - order[b.analysis.recommendation];
+    });
+
+    setStocks(sortedStocks);
+    if (sortedStocks.length > 0) {
+        setSelectedStock(sortedStocks[0]);
+    }
     setLoading(false);
-  }, [stocks]);
+  }, []);
 
   useEffect(() => {
     analyzeAllStocks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [analyzeAllStocks]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans">
       <Header onRefresh={analyzeAllStocks} isRefreshing={loading}/>
       <main className="container mx-auto p-4">
-        {loading && stocks.length === 0 ? (
+        {loading ? (
           <div className="flex flex-col items-center justify-center h-96">
             <Loader />
-            <p className="mt-4 text-lg text-gray-400">Performing Technical Analysis on Fresh Data...</p>
+            <p className="mt-4 text-lg text-gray-400">Performing Parallel Technical Analysis...</p>
             <div className="mt-4 text-sm text-gray-500 w-full max-w-md bg-gray-800/50 rounded-lg p-4">
               {NASDAQ_TOP_25.map(({ ticker }) => (
                 <div key={ticker} className="flex justify-between px-2 py-1">
@@ -90,7 +97,7 @@ const App: React.FC = () => {
               ))}
             </div>
           </div>
-        ) : error ? (
+        ) : error && stocks.length === 0 ? (
           <div className="text-center text-red-500">{error}</div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
