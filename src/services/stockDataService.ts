@@ -3,8 +3,11 @@ import { ChartDataPoint, StockInfo } from '../types';
 const generateRealisticData = (priceRange: [number, number]): ChartDataPoint[] => {
     const data: ChartDataPoint[] = [];
     let price = priceRange[0] + Math.random() * (priceRange[1] - priceRange[0]);
-    const volatility = 0.02 + Math.random() * 0.03; 
-    const trend = (Math.random() - 0.5) * 0.05;
+    
+    // The original volatility and trend were too high, causing unrealistic price drift over 90 days.
+    // These values are now tuned to be more subtle and realistic for large-cap stocks.
+    const volatility = 0.015 + Math.random() * 0.02; // Realistic daily volatility (1.5% - 3.5%)
+    const trend = (Math.random() - 0.5) * 0.001; // A very subtle daily trend (-0.05% to +0.05%)
 
     for (let i = 0; i < 90; i++) {
         const date = new Date();
