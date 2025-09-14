@@ -1,0 +1,5 @@
+{
+  "name": "Nasdaq TA Analyst",
+  "description": "An application that performs daily technical analysis on the top 25 NASDAQ stocks by market cap and provides buy, sell, or hold recommendations using the Gemini API.",
+  "requestFramePermissions": []
+}
