@@ -7,7 +7,7 @@ export enum AnalysisRecommendation {
 export interface StockInfo {
     ticker: string;
     name: string;
-    realisticPriceRange: [number, number];
+    lastClosePrice: number;
 }
 
 export interface StockAnalysis {
